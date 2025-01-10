@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlmodel import Field
+from fastapi import Form
 
 from uuid import UUID
 from datetime import datetime
@@ -7,28 +8,28 @@ from datetime import datetime
 
 class UserModel(BaseModel):
     uid: UUID
+    fullName: str
+    email: str
     username: str
-    email: EmailStr
-    password: str = Field(exclude=True)
-    profile_picture: str
     bio: str
-    created_at: datetime
-    updated_at: datetime
-    # posts:list[Post] will add after post features is make
-    followers: list["UserModel"]
-    following: list["UserModel"]
+    hashedPassword: str = Field(exclude=True)
+    profileUrl: str
+    createdAt: datetime
 
 
 class UserCreateModel(BaseModel):
-    username: str
-    email: EmailStr
+    fullName: str
+    email: str
     password: str
-    profile_picture: str
     bio: str
+    # profileUrl: we are taking profile URL directly from the request
 
 
-class UserUpdateModel(BaseModel):
-    username: str | None = None
-    password: str | None = None
-    profile_picture: str | None = None
-    bio: str | None = None
+class LoginInModel(BaseModel):
+    email: str
+    password: str
+
+
+class VerifyOTPModel(BaseModel):
+    email: str
+    OTP: str

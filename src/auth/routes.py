@@ -1,50 +1,69 @@
-from fastapi import APIRouter, Depends, Body, Path
+from fastapi import (
+    APIRouter,
+    status,
+    UploadFile,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    Body,
+)
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from typing import Annotated
 
 from src.db.main import get_session
-from src.errors import UserNotFound
-
+from src.db.redis import getOTPFromRedis, putOPTInRedis
+from src.mail import createMessage, mail, otpHtmlMessage
 from .service import AuthService
-from .utils import create_jwt_token
-from .schemas import UserModel, UserCreateModel, UserUpdateModel
+from .utils import createOTP
+from .schemas import UserCreateModel, UserModel, VerifyOTPModel, LoginInModel
 
-auth_router = APIRouter()
-session: AsyncSession = Depends(get_session)
-user_service = AuthService()
+authRouter = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+)
 
-
-@auth_router.post("/register", response_model=UserModel)
-async def create_user(user_data: Annotated[UserCreateModel, Body()], session=session):
-    return await user_service.create_user(user_data, session)
+authService = AuthService()
 
 
-@auth_router.get('/login/{email}')
-async def login_user(email:Annotated[str,Path()],session = session):
-    user_exist = await user_service.user_exist(email,session) 
-    if not user_exist:
-        raise UserNotFound()
-    token =  create_jwt_token({'email':email}) 
-    return {
-        "message" : "login successfully",
-        "token" : token
-    }
-    
-
-@auth_router.get("/users/{username}",response_model=UserModel)
-async def searchUser(username: str, session=session):
-    return await user_service.search_user_by_username(username, session)
-
-
-@auth_router.post("/update_user/{user_email}", response_model=UserModel)
-async def update_user(
-    user_email: Annotated[str, Path()],
-    update_data: Annotated[UserUpdateModel, Body()],
-    session=session,
+@authRouter.post(
+    "/create_user",
+    response_model=UserModel,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user(
+    fullName: Annotated[str, Form()],
+    email: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    bio: Annotated[str, Form()],
+    imageFile: Annotated[UploadFile, File()],
+    background_task: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
 ):
-
-    updated_user = await user_service.update_user_expect_pass(
-        user_email, update_data, session
+    userData = UserCreateModel(
+        fullName=fullName, email=email, password=password, bio=bio
     )
-    return updated_user
+    user = await authService.createUser(session, userData, imageFile)
+    OTP = createOTP()
+    await putOPTInRedis(OTP, str(user.uid))
+    message = createMessage(
+        recipients=[user.email], body=otpHtmlMessage(OTP), subject="Your OTP"
+    )
+    background_task.add_task(mail.send_message, message=message)
+    return user
+
+
+@authRouter.post("/login")
+async def login_user(
+    loginCred: LoginInModel, session: AsyncSession = Depends(get_session)
+):
+    return await authService.login(loginCred, session)
+
+
+@authRouter.post("/verify-opt")
+async def verify_opt(
+    verification_details: Annotated[VerifyOTPModel, Body()],
+    session: AsyncSession = Depends(get_session),
+):
+    return await authService.verify_opt(verification_details, session)

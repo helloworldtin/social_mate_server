@@ -10,11 +10,11 @@ from src.config import Config
 async_engine = AsyncEngine(create_engine(url=Config.DATABASE_URL, echo=True))
 
 
-async def get_session()->AsyncGenerator[AsyncSession,AsyncSession]:
+async def get_session()->AsyncGenerator[AsyncSession,None]:
     Session = sessionmaker(
         bind=async_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    async with Session() as session:
-        yield session
+    async with Session() as ses:
+        yield ses
